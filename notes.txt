@@ -1,9 +1,0 @@
-Done:
-Copied evdev and txt files from weston
-Example hookup for evdev from compositor rpi
-
-Questions:
-How to handle the seat abstraction from wayland
-
-Design decisions:
-Don't provide mainloop integration but only the lower level plumbing to set it all up.
