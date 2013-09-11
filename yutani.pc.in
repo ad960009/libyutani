@@ -1,0 +1,10 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: Yutani library
+Description: Input helpers for Wayland compositors
+Version: @_VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} -lyutani
