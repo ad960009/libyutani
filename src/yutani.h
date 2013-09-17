@@ -28,10 +28,10 @@ enum yt_key_state_update {
 	YT_KEY_STATE_NONE
 };
 
-enum yutani_led {
-	LED_NUM_LOCK = (1 << 0),
-	LED_CAPS_LOCK = (1 << 1),
-	LED_SCROLL_LOCK = (1 << 2),
+enum yt_led_state {
+	YT_LED_NUM_LOCK = (1 << 0),
+	YT_LED_CAPS_LOCK = (1 << 1),
+	YT_LED_SCROLL_LOCK = (1 << 2),
 };
 
 enum yt_device_capability {
@@ -108,6 +108,8 @@ int yt_device_del_from_seat(struct yt_device *device, struct yt_seat *seat);
 int yt_device_handle(struct yt_device *device);
 struct yt_seat *yt_seat_create(const char *name,
 		struct yt_seat_notify_interface *notify, void *data);
+void yt_device_led_state_set(struct yt_seat *seat, enum yt_led_state state);
+enum yt_led_state yt_device_led_state_get(struct yt_seat *seat);
 void yt_device_hotplug_handle();
 void yt_device_user_data_set(struct yt_device *device, void *user_data);
 void *yt_device_user_data_get(struct yt_device *device);

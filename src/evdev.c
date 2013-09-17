@@ -33,16 +33,41 @@
 #include "evdev.h"
 #include "yutani.h"
 
-void evdev_led_update(struct evdev_device *device, enum yutani_led leds)
+inline static void evdev_led_state_set(struct evdev_device *device)
+{
+	unsigned long led_bits[NBITS(KEY_MAX)];
+	int i;
+	if (!(device->base.caps & YT_LED))
+		return;
+	
+	if (ioctl(device->base.fd, EVIOCGLED((sizeof(led_bits))), led_bits) < 0)
+		return;
+	device->led_state = 0;
+	for (i = 0; i < LED_MAX; i++) {
+		if (TEST_BIT(led_bits, i)) {
+			switch (i) {
+				case LED_NUML:
+					device->led_state |= YT_LED_NUM_LOCK;
+					break;
+				case LED_CAPSL:
+					device->led_state |= YT_LED_CAPS_LOCK;
+					break;
+				case LED_SCROLLL:
+					device->led_state |= YT_LED_SCROLL_LOCK;
+					break;
+			}
+		}
+	}
+}
+
+void evdev_led_update(struct evdev_device *device, enum yt_led_state state)
 {
 	static const struct {
-		enum yutani_led weston;
+		enum yt_led_state led_state;
 		int evdev;
-	} map[] = {
-		{
-			LED_NUM_LOCK, LED_NUML}, {
-				LED_CAPS_LOCK, LED_CAPSL}, {
-					LED_SCROLL_LOCK, LED_SCROLLL},};
+	} map[] = {{ YT_LED_NUM_LOCK, LED_NUML },
+		{ YT_LED_CAPS_LOCK, LED_CAPSL },
+		{ YT_LED_SCROLL_LOCK, LED_SCROLLL}};
 	struct input_event ev[ARRAY_LENGTH(map)];
 	unsigned int i;
 
@@ -53,11 +78,11 @@ void evdev_led_update(struct evdev_device *device, enum yutani_led leds)
 	for (i = 0; i < ARRAY_LENGTH(map); i++) {
 		ev[i].type = EV_LED;
 		ev[i].code = map[i].evdev;
-		ev[i].value = ! !(leds & map[i].weston);
+		ev[i].value = !!(state & map[i].led_state);
 	}
 
 	i = write(device->base.fd, ev, sizeof ev);
-	(void)i;		/* no, we really don't care about the return value */
+	evdev_led_state_set(device);
 }
 
 static inline void evdev_process_key(struct evdev_device *device, struct input_event *e, int time)
@@ -88,7 +113,20 @@ static inline void evdev_process_key(struct evdev_device *device, struct input_e
 				master->notify.notify_touch((struct yt_device *)device, time, 0, 0, 0,
 						YT_TOUCH_STATE_UP);
 			break;
+		case KEY_CAPSLOCK:
+			if (e->value)
+				device->led_state ^= YT_LED_CAPS_LOCK;
+			goto notify_key;
+		case KEY_NUMLOCK:
+			if (e->value)
+				device->led_state ^= YT_LED_NUM_LOCK;
+			goto notify_key;
+		case KEY_SCROLLLOCK:
+			if (e->value)
+				device->led_state ^= YT_LED_SCROLL_LOCK;
+			goto notify_key;
 		default:
+notify_key:
 			if (master->notify.notify_key)
 				master->notify.notify_key((struct yt_device *)device, time, e->code,
 						e->value ? YT_KEY_STATE_PRESSED :
@@ -313,7 +351,7 @@ struct evdev_dispatch_interface fallback_interface = {
 	fallback_destroy
 };
 
-static const struct evdev_dispatch fallback_dispatch = {
+static struct evdev_dispatch fallback_dispatch = {
 	.interface = &fallback_interface
 };
 
@@ -364,8 +402,6 @@ int evdev_device_data(int fd, uint32_t mask __UNUSED__, void *data)
 		}
 
 		evdev_process_events(device, ev, len / sizeof ev[0]);
-		printf("\n");
-
 	} while (len > 0);
 
 	return 1;
@@ -445,7 +481,10 @@ static int evdev_handle_device(struct evdev_device *device)
 		}
 	}
 	if (TEST_BIT(ev_bits, EV_LED)) {
+		enum yt_led_state all_led = YT_LED_NUM_LOCK | YT_LED_CAPS_LOCK | YT_LED_SCROLL_LOCK;
 		device->base.caps |= YT_LED;
+		evdev_led_update(device, all_led);
+		evdev_led_state_set(device);
 	}
 
 	/* This rule tries to catch accelerometer devices and opt out. We may

@@ -157,3 +157,19 @@ YT_EXPORT void *yt_device_user_data_get(struct yt_device *device)
 	struct evdev_device *dev = evdev_device(device);
 	return dev->user_data;
 }
+
+YT_EXPORT void yt_device_leds_state_set(struct yt_device *device, enum yt_led_state state)
+{
+	struct evdev_device *dev = evdev_device(device);
+	if (!(device->caps & YT_LED))
+		return;
+	if (dev->led_state == state)
+		return;
+	evdev_led_update(dev, state);
+}
+
+YT_EXPORT enum yt_led_state yt_seat_leds_state_get(struct yt_device *device)
+{
+	struct evdev_device *dev = evdev_device(device);
+	return dev->led_state;
+}

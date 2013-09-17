@@ -67,6 +67,7 @@ struct evdev_device {
 
 	enum evdev_event_type pending_events;
 	int is_mt;
+	enum yt_led_state led_state;
 };
 
 /* copied from udev/extras/input_id/input_id.c */
@@ -97,8 +98,7 @@ struct evdev_dispatch {
 
 struct evdev_dispatch *evdev_touchpad_create(struct evdev_device *device);
 
-//void
-//evdev_led_update(struct evdev_device *device, enum weston_led leds);
+void evdev_led_update(struct evdev_device *device, enum yt_led_state state);
 
 struct evdev_device *evdev_device_create(const char *path);
 
