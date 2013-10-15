@@ -7,6 +7,7 @@
 #include "yutani.h"
 #include "evdev.h"
 #include "udev.h"
+#include "common.h"
 
 int evdev_udev_handler(int fd __UNUSED__, uint mask __UNUSED__, void *data)
 {
