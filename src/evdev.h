@@ -29,7 +29,6 @@
 
 #define MAX_SLOTS 16
 #define ARRAY_LENGTH(a) (sizeof (a) / sizeof (a)[0])
-#define __UNUSED__ __attribute__ ((unused))
 
 enum evdev_event_type {
 	EVDEV_ABSOLUTE_MOTION = (1 << 0),
@@ -114,6 +113,5 @@ static inline struct evdev_device *evdev_device(struct yt_device *device)
 {
 	return (struct evdev_device *)device;
 }
-
 
 #endif /* EVDEV_H */

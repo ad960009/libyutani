@@ -64,6 +64,11 @@ enum yt_axis_type {
 	YT_AXIS_TYPE_HORIZONTAL_SCROLL,
 };
 
+enum {
+	TTY_ENTER_VT,
+	TTY_LEAVE_VT
+};
+
 struct yt_device {
 	struct wl_list all_devices_link;
 	struct wl_list seat_link;
@@ -92,8 +97,8 @@ struct yt_seat_notify_interface {
 struct yt_seat {
 	char *name;
 	struct wl_list devices;
-	struct yt_seat_notify_interface notify;
-	void *notify_data;
+	int tty_event_fd;
+	int tty_signal_fd;
 };
 
 struct yt_hotplug_cbs {
@@ -114,4 +119,12 @@ void yt_device_hotplug_handle();
 void yt_device_user_data_set(struct yt_device *device, void *user_data);
 void *yt_device_user_data_get(struct yt_device *device);
 
+typedef void (*yt_tty_vt_func_t)(void *data, int event);
+int yt_tty_create(struct yt_seat *seat, int tty_fd, int tty_nr, yt_tty_vt_func_t vt_func, void *data);
+int yt_tty_handle(struct yt_seat *seat);
+void yt_tty_destroy(struct yt_seat *seat);
+
+void yt_tty_reset(struct yt_seat *seat);
+int yt_tty_on_input(struct yt_seat *seat);
+int yt_tty_activate_vt(struct yt_seat *seat, int vt);
 #endif /* YUTANI_H */
