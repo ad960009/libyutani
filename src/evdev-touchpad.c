@@ -435,6 +435,11 @@ static int fsm_timout_handler(void *data)
 	return 1;
 }
 
+int touchpad_timeout_handler(struct evdev_device *device)
+{
+	return fsm_timout_handler(device->dispatch);
+}
+
 static void touchpad_update_state(struct touchpad_dispatch *touchpad, uint32_t time)
 {
 	int motion_index;
@@ -755,6 +760,8 @@ static int touchpad_init(struct touchpad_dispatch *touchpad, struct evdev_device
 		accel->interface->destroy(accel);
 		return -1;
 	}*/
+
+	touchpad->device->base.timer_fd = touchpad->fsm.timer_fd;
 
 	/* Configure */
 	touchpad->fsm.enable = !has_buttonpad;

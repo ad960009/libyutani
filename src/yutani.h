@@ -76,6 +76,7 @@ struct yt_device {
 	char *devnode;
 	char *devname;
 	int fd;
+	int timer_fd;
 };
 
 struct yt_seat_notify_interface {
@@ -111,6 +112,7 @@ struct wl_list *yt_device_get_devices();
 int yt_device_add_to_seat(struct yt_device *device, struct yt_seat *seat);
 int yt_device_del_from_seat(struct yt_device *device, struct yt_seat *seat);
 int yt_device_handle(struct yt_device *device);
+int yt_device_timer_handle(struct yt_device *device);
 struct yt_seat *yt_seat_create(const char *name,
 		struct yt_seat_notify_interface *notify, void *data);
 void yt_device_led_state_set(struct yt_seat *seat, enum yt_led_state state);

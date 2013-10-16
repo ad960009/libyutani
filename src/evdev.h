@@ -108,6 +108,7 @@ void evdev_device_destroy(struct evdev_device *device);
 //                          struct wl_list *evdev_devices);
 
 void evdev_process_events(struct evdev_device *device, struct input_event *ev, int count);
+int touchpad_timeout_handler(struct evdev_device *device);
 
 static inline struct evdev_device *evdev_device(struct yt_device *device)
 {

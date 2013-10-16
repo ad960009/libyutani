@@ -141,7 +141,12 @@ YT_EXPORT int yt_device_handle(struct yt_device *device)
 	} while (len > 0);
 
 	return 1;
+}
 
+YT_EXPORT int yt_device_timer_handle(struct yt_device *device)
+{
+	struct evdev_device *dev = evdev_device(device);
+	return touchpad_timeout_handler(dev->dispatch);
 }
 
 YT_EXPORT struct yt_seat *yt_seat_create(const char *name,
