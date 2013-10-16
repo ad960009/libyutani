@@ -26,9 +26,12 @@
 #include <string.h>
 #include <stdbool.h>
 #include <linux/input.h>
+#include <sys/timerfd.h>
 
 //#include "filter.h"
 #include "evdev.h"
+#include "yutani.h"
+#include "common.h"
 
 /* Default values */
 /*#define DEFAULT_CONSTANT_ACCEL_NUMERATOR 50
@@ -126,7 +129,8 @@ struct touchpad_dispatch {
 
 		struct wl_array events;
 		enum fsm_state state;
-		struct wl_event_source *timer_source;
+		int timer_fd;
+//		struct wl_event_source *timer_source;
 	} fsm;
 
 	struct {
@@ -267,6 +271,13 @@ static void touchpad_get_delta(struct touchpad_dispatch *touchpad, double *dx, d
 
 static void notify_button_pressed(struct touchpad_dispatch *touchpad, uint32_t time)
 {
+	struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat);
+	
+	if (notify && notify->notify_button) {
+		notify->notify_button((struct yt_device *)touchpad->device, time,
+				DEFAULT_TOUCHPAD_SINGLE_TAP_BUTTON,
+				WL_POINTER_BUTTON_STATE_PRESSED);
+	}
 /*	notify_button(touchpad->device->seat, time,
 			DEFAULT_TOUCHPAD_SINGLE_TAP_BUTTON,
 			WL_POINTER_BUTTON_STATE_PRESSED);*/
@@ -274,6 +285,13 @@ static void notify_button_pressed(struct touchpad_dispatch *touchpad, uint32_t t
 
 static void notify_button_released(struct touchpad_dispatch *touchpad, uint32_t time)
 {
+	struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat);
+	
+	if (notify && notify->notify_button) {
+		notify->notify_button((struct yt_device *)touchpad->device, time,
+				DEFAULT_TOUCHPAD_SINGLE_TAP_BUTTON,
+				WL_POINTER_BUTTON_STATE_PRESSED);
+	}
 /*	notify_button(touchpad->device->seat, time,
 			DEFAULT_TOUCHPAD_SINGLE_TAP_BUTTON,
 			WL_POINTER_BUTTON_STATE_RELEASED);*/
@@ -281,8 +299,8 @@ static void notify_button_released(struct touchpad_dispatch *touchpad, uint32_t 
 
 static void notify_tap(struct touchpad_dispatch *touchpad, uint32_t time)
 {
-/*	notify_button_pressed(touchpad, time);
-	notify_button_released(touchpad, time);*/
+	notify_button_pressed(touchpad, time);
+	notify_button_released(touchpad, time);
 }
 
 static void process_fsm_events(struct touchpad_dispatch *touchpad, uint32_t time)
@@ -325,11 +343,11 @@ static void process_fsm_events(struct touchpad_dispatch *touchpad, uint32_t time
 			case FSM_TAP:
 				switch (event) {
 					case FSM_EVENT_TIMEOUT:
-						//notify_tap(touchpad, time);
+						notify_tap(touchpad, time);
 						touchpad->fsm.state = FSM_IDLE;
 						break;
 					case FSM_EVENT_TOUCH:
-						//notify_button_pressed(touchpad, time);
+						notify_button_pressed(touchpad, time);
 						touchpad->fsm.state = FSM_TAP_2;
 						break;
 					default:
@@ -343,8 +361,8 @@ static void process_fsm_events(struct touchpad_dispatch *touchpad, uint32_t time
 						touchpad->fsm.state = FSM_DRAG;
 						break;
 					case FSM_EVENT_RELEASE:
-						//notify_button_released(touchpad, time);
-						//notify_tap(touchpad, time);
+						notify_button_released(touchpad, time);
+						notify_tap(touchpad, time);
 						touchpad->fsm.state = FSM_IDLE;
 						break;
 					default:
@@ -355,7 +373,7 @@ static void process_fsm_events(struct touchpad_dispatch *touchpad, uint32_t time
 			case FSM_DRAG:
 				switch (event) {
 					case FSM_EVENT_RELEASE:
-						//notify_button_released(touchpad, time);
+						notify_button_released(touchpad, time);
 						touchpad->fsm.state = FSM_IDLE;
 						break;
 					default:
@@ -371,9 +389,18 @@ static void process_fsm_events(struct touchpad_dispatch *touchpad, uint32_t time
 		}
 	}
 
-	if (timeout != UINT32_MAX)
-		wl_event_source_timer_update(touchpad->fsm.timer_source,
-				timeout);
+	if (timeout != UINT32_MAX) {
+		struct itimerspec its;
+		its.it_interval.tv_sec = 0;
+		its.it_interval.tv_nsec = 0;
+		its.it_value.tv_sec = timeout / 1000;
+		its.it_value.tv_nsec = (timeout % 1000) * 1000 * 1000;
+		if (timerfd_settime(touchpad->fsm.timer_fd, 0, &its, NULL) < 0)
+			fprintf(stderr, "could not set timerfd\n: %m");
+
+		/*wl_event_source_timer_update(touchpad->fsm.timer_source,
+				timeout);*/
+	}
 
 	wl_array_release(&touchpad->fsm.events);
 	wl_array_init(&touchpad->fsm.events);
@@ -399,7 +426,10 @@ static int fsm_timout_handler(void *data)
 
 	if (touchpad->fsm.events.size == 0) {
 		push_fsm_event(touchpad, FSM_EVENT_TIMEOUT);
-		process_fsm_events(touchpad, weston_compositor_get_time());
+		struct timeval tv;
+		gettimeofday(&tv, NULL);
+		process_fsm_events(touchpad, tv.tv_sec * 1000 + tv.tv_usec / 1000);
+//		process_fsm_events(touchpad, weston_compositor_get_time());
 	}
 
 	return 1;
@@ -476,18 +506,21 @@ static void touchpad_update_state(struct touchpad_dispatch *touchpad, uint32_t t
 			touchpad->device->pending_events |=
 				EVDEV_RELATIVE_MOTION | EVDEV_SYN;
 		} else if (touchpad->finger_state == TOUCHPAD_FINGERS_TWO) {
-			if (dx != 0.0)
-				;
-/*				notify_axis(touchpad->device->seat,
-						time,
-						WL_POINTER_AXIS_HORIZONTAL_SCROLL,
-						wl_fixed_from_double(dx));*/
-			if (dy != 0.0)
-				;
-/*				notify_axis(touchpad->device->seat,
-						time,
-						WL_POINTER_AXIS_VERTICAL_SCROLL,
-						wl_fixed_from_double(dy));*/
+			struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat);
+			if (notify && notify->notify_axis) {
+				if (dx != 0.0) {
+					notify->notify_axis(touchpad->device,
+							time,
+							WL_POINTER_AXIS_HORIZONTAL_SCROLL,
+							wl_fixed_from_double(dx));
+				}
+				if (dy != 0.0) {
+					notify->notify_axis(touchpad->device,
+							time,
+							WL_POINTER_AXIS_VERTICAL_SCROLL,
+							wl_fixed_from_double(dy));
+				}
+			}
 		}
 	}
 
@@ -547,6 +580,7 @@ static inline void process_absolute(struct touchpad_dispatch *touchpad,
 static inline void process_key(struct touchpad_dispatch *touchpad,
 		struct evdev_device *device, struct input_event *e, uint32_t time)
 {
+	struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat);
 	switch (e->code) {
 		case BTN_TOUCH:
 			if (!touchpad->has_pressure) {
@@ -565,10 +599,12 @@ static inline void process_key(struct touchpad_dispatch *touchpad,
 		case BTN_FORWARD:
 		case BTN_BACK:
 		case BTN_TASK:
-/*			notify_button(device->seat,
+			if (notify && notify->notify_button) {
+				notify->notify_button((struct yt_device *)touchpad->device,
 					time, e->code,
 					e->value ? WL_POINTER_BUTTON_STATE_PRESSED :
-					WL_POINTER_BUTTON_STATE_RELEASED);*/
+					WL_POINTER_BUTTON_STATE_RELEASED);
+			}
 			break;
 		case BTN_TOOL_PEN:
 		case BTN_TOOL_RUBBER:
@@ -629,7 +665,8 @@ static void touchpad_destroy(struct evdev_dispatch *dispatch)
 		(struct touchpad_dispatch *)dispatch;
 
 //	touchpad->filter->interface->destroy(touchpad->filter);
-	wl_event_source_remove(touchpad->fsm.timer_source);
+//	wl_event_source_remove(touchpad->fsm.timer_source);
+	close(touchpad->fsm.timer_fd);
 	free(dispatch);
 }
 
@@ -641,7 +678,7 @@ struct evdev_dispatch_interface touchpad_interface = {
 static int touchpad_init(struct touchpad_dispatch *touchpad, struct evdev_device *device)
 {
 //	struct weston_motion_filter *accel;
-	struct wl_event_loop *loop;
+//	struct wl_event_loop *loop;
 
 	unsigned long prop_bits[INPUT_PROP_MAX];
 	struct input_absinfo absinfo;
@@ -708,6 +745,9 @@ static int touchpad_init(struct touchpad_dispatch *touchpad, struct evdev_device
 	wl_array_init(&touchpad->fsm.events);
 	touchpad->fsm.state = FSM_IDLE;
 
+	touchpad->fsm.timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+	if (touchpad->fsm.timer_fd < 0)
+		return -1;
 /*	loop = wl_display_get_event_loop(device->seat->compositor->wl_display);
 	touchpad->fsm.timer_source =
 		wl_event_loop_add_timer(loop, fsm_timout_handler, touchpad);

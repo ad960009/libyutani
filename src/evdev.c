@@ -34,8 +34,6 @@
 #include "yutani.h"
 #include "common.h"
 
-extern struct yt_seat_notify_interface *yt_seat_notify_get(struct yt_seat *seat);
-
 inline static void evdev_led_state_set(struct evdev_device *device)
 {
 	unsigned long led_bits[NBITS(KEY_MAX)];
