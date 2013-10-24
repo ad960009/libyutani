@@ -42,6 +42,8 @@ enum evdev_event_type {
 struct evdev_device {
 	struct yt_device base;
 	void *user_data;
+	struct wl_event_source *source;
+	int fd;
 
 	struct yt_seat *seat;
 	struct evdev_dispatch *dispatch;
@@ -107,8 +109,7 @@ void evdev_device_destroy(struct evdev_device *device);
 //evdev_notify_keyboard_focus(struct weston_seat *seat,
 //                          struct wl_list *evdev_devices);
 
-void evdev_process_events(struct evdev_device *device, struct input_event *ev, int count);
-int touchpad_timeout_handler(struct evdev_device *device);
+int evdev_device_data(int fd, uint32_t mask, void *data);
 
 static inline struct evdev_device *evdev_device(struct yt_device *device)
 {

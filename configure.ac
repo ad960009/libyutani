@@ -33,8 +33,8 @@ LT_INIT
 
 PKG_PROG_PKG_CONFIG()
 
-PKG_CHECK_MODULES(YT, [libudev wayland-server mtdev])
-PKG_CHECK_MODULES(EXAMPLE, [wayland-server])
+PKG_CHECK_MODULES(YT, [libudev wayland-server mtdev wayland-client])
+PKG_CHECK_MODULES(EXAMPLE, [wayland-server wayland-client])
 
 YT_LIBS="$YT_LIBS -lm"
 

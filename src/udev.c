@@ -56,13 +56,13 @@ int evdev_enable_udev_monitor(struct udev_context *master)
 
 	master->udev = udev_new();
 	if (!master->udev) {
-		printf("udev: Failed to create udev object.\n");
+		fprintf(stderr, "udev: Failed to create udev object.\n");
 		return 0;
 	}
 
 	master->udev_monitor = udev_monitor_new_from_netlink(master->udev, "udev");
 	if (!master->udev_monitor) {
-		printf("udev: failed to create the udev monitor\n");
+		fprintf(stderr, "udev: failed to create the udev monitor\n");
 		return 0;
 	}
 
@@ -70,7 +70,7 @@ int evdev_enable_udev_monitor(struct udev_context *master)
 			"input", NULL);
 
 	if (udev_monitor_enable_receiving(master->udev_monitor)) {
-		printf("udev: failed to bind the udev monitor\n");
+		fprintf(stderr, "udev: failed to bind the udev monitor\n");
 		udev_monitor_unref(master->udev_monitor);
 		return 0;
 	}
@@ -144,7 +144,7 @@ struct evdev_device *device_added(struct udev_device *udev_device, struct udev_c
 	 * read.  mtdev_get() also expects this. */
 	device = evdev_device_create(devnode);
 	if (!device) {
-		printf("not using input device '%s'.\n", devnode);
+		fprintf(stderr, "not using input device '%s'.\n", devnode);
 		return NULL;
 	}
 	wl_list_insert(&master->devices_list, &device->base.all_devices_link);

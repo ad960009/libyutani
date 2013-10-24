@@ -75,31 +75,27 @@ struct yt_device {
 	enum yt_device_capability caps;
 	char *devnode;
 	char *devname;
-	int fd;
-	int timer_fd;
 };
 
 struct yt_seat_notify_interface {
-	void (*notify_motion)(struct yt_device *device, uint32_t time,
+	void (*notify_motion)(struct yt_device *device, void *notify_data, uint32_t time,
 			wl_fixed_t dx, wl_fixed_t dy);
-	void (*notify_motion_absolute)(struct yt_device *device, uint32_t time,
+	void (*notify_motion_absolute)(struct yt_device *device, void *notify_data, uint32_t time,
 			wl_fixed_t x, wl_fixed_t y);
-	void (*notify_button)(struct yt_device *device, uint32_t time, int32_t button,
+	void (*notify_button)(struct yt_device *device, void *notify_data, uint32_t time, int32_t button,
 			enum yt_button_state state);
-	void (*notify_axis)(struct yt_device *device, uint32_t time, enum yt_axis_type axis,
+	void (*notify_axis)(struct yt_device *device, void *notify_data, uint32_t time, enum yt_axis_type axis,
 			wl_fixed_t value);
-	void (*notify_modifiers)(struct yt_device *device, uint32_t serial);
-	void (*notify_key)(struct yt_device *device, uint32_t time, uint32_t key,
+	void (*notify_modifiers)(struct yt_device *device, void *notify_data, uint32_t serial);
+	void (*notify_key)(struct yt_device *device, void *notify_data, uint32_t time, uint32_t key,
 			enum yt_key_state state, enum yt_key_state_update update_state);
-	void (*notify_touch)(struct yt_device *device, uint32_t time, int touch_id,
+	void (*notify_touch)(struct yt_device *device, void *notify_data, uint32_t time, int touch_id,
 			wl_fixed_t x, wl_fixed_t y, enum yt_touch_state state);
 };
 
 struct yt_seat {
 	char *name;
 	struct wl_list devices;
-	int tty_event_fd;
-	int tty_signal_fd;
 };
 
 struct yt_hotplug_cbs {
@@ -107,26 +103,30 @@ struct yt_hotplug_cbs {
 	void (*del_cb)(struct yt_device *dev, void *data);
 };
 
-int yt_device_init(struct yt_hotplug_cbs *plug, void *data);
+// return SUCCESS: 0, FAIL: -1
+int yt_device_init(struct yt_hotplug_cbs *plug, void *data, struct yt_seat *seat);
 struct wl_list *yt_device_get_devices();
+
+struct yt_seat_create_param {
+	struct wl_event_loop *display_loop;
+	struct wl_event_loop *event_loop;
+	const char *seat_name;
+	struct yt_seat_notify_interface *notify;
+	void *notify_data;
+};
+
+struct yt_seat *yt_seat_create(struct yt_seat_create_param *param);
 int yt_device_add_to_seat(struct yt_device *device, struct yt_seat *seat);
 int yt_device_del_from_seat(struct yt_device *device, struct yt_seat *seat);
-int yt_device_handle(struct yt_device *device);
-int yt_device_timer_handle(struct yt_device *device);
-struct yt_seat *yt_seat_create(const char *name,
-		struct yt_seat_notify_interface *notify, void *data);
+
 void yt_device_led_state_set(struct yt_seat *seat, enum yt_led_state state);
 enum yt_led_state yt_device_led_state_get(struct yt_seat *seat);
-void yt_device_hotplug_handle();
 void yt_device_user_data_set(struct yt_device *device, void *user_data);
 void *yt_device_user_data_get(struct yt_device *device);
 
 typedef void (*yt_tty_vt_func_t)(void *data, int event);
 int yt_tty_create(struct yt_seat *seat, int tty_fd, int tty_nr, yt_tty_vt_func_t vt_func, void *data);
-int yt_tty_handle(struct yt_seat *seat);
 void yt_tty_destroy(struct yt_seat *seat);
-
 void yt_tty_reset(struct yt_seat *seat);
-int yt_tty_on_input(struct yt_seat *seat);
 int yt_tty_activate_vt(struct yt_seat *seat, int vt);
 #endif /* YUTANI_H */

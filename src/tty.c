@@ -33,37 +33,33 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <errno.h>
-#include <sys/signalfd.h>
+
+#include "common.h"
 #include "tty.h"
 /* Introduced in 2.6.38 */
 #ifndef K_OFF
 #define K_OFF 0x04
 #endif
-#include "common.h"
 
 struct tty {
 	void *data;
-	int event_fd;
-	int signal_fd;
+	int fd;
 	struct termios terminal_attributes;
 
+	struct wl_event_source *input_source;
+	struct wl_event_source *vt_source;
 	yt_tty_vt_func_t vt_func;
 	int vt, starting_vt, has_vt;
 	int kb_mode;
+	struct yt_seat *seat;
 };
 
-int tty_event_fd_get(struct tty *tty)
+int tty_fd_get(struct tty *tty)
 {
-	return tty->event_fd;
+	return tty->fd;
 }
 
-int tty_signal_fd_get(struct tty *tty)
-{
-	return tty->signal_fd;
-}
-
-int tty_vt_handler(int signal_number __UNUSED__, void *data)
+static int vt_handler(int signal_number __UNUSED__, void *data)
 {
 	struct tty *tty = data;
 
@@ -71,9 +67,9 @@ int tty_vt_handler(int signal_number __UNUSED__, void *data)
 		tty->vt_func(tty->data, TTY_LEAVE_VT);
 		tty->has_vt = 0;
 
-		ioctl(tty->event_fd, VT_RELDISP, 1);
+		ioctl(tty->fd, VT_RELDISP, 1);
 	} else {
-		ioctl(tty->event_fd, VT_RELDISP, VT_ACKACQ);
+		ioctl(tty->fd, VT_RELDISP, VT_ACKACQ);
 
 		tty->vt_func(tty->data, TTY_ENTER_VT);
 		tty->has_vt = 1;
@@ -87,7 +83,7 @@ int on_tty_input(int fd __UNUSED__, uint32_t mask __UNUSED__, void *data)
 	struct tty *tty = data;
 
 	/* Ignore input to tty.  We get keyboard events from evdev */
-	tcflush(tty->event_fd, TCIFLUSH);
+	tcflush(tty->fd, TCIFLUSH);
 
 	return 1;
 }
@@ -99,12 +95,12 @@ static int try_open_vt(struct tty *tty)
 
 	tty0 = open("/dev/tty0", O_WRONLY | O_CLOEXEC);
 	if (tty0 < 0) {
-		printf("could not open tty0: %s(%d)\n", strerror(errno), errno);
+		fprintf(stderr, "could not open tty0: %m\n");
 		return -1;
 	}
 
 	if (ioctl(tty0, VT_OPENQRY, &tty->vt) < 0 || tty->vt == -1) {
-		printf("could not open tty0: %s(%d)\n", strerror(errno), errno);
+		fprintf(stderr, "could not open tty0: %m\n");
 		close(tty0);
 		return -1;
 	}
@@ -121,15 +117,16 @@ static int try_open_vt(struct tty *tty)
 
 int tty_activate_vt(struct tty *tty, int vt)
 {
-	return ioctl(tty->event_fd, VT_ACTIVATE, vt);
+	return ioctl(tty->fd, VT_ACTIVATE, vt);
 }
 
-struct tty *tty_create(int tty_fd, int tty_nr, yt_tty_vt_func_t vt_func, void *data)
+struct tty *tty_create(int tty_fd, int tty_nr, yt_tty_vt_func_t vt_func, void *data, struct yt_seat *seat)
 {
 	struct termios raw_attributes;
 	struct vt_mode mode = { 0, 0, 0, 0, 0 };
 	int ret;
 	struct tty *tty;
+	struct wl_event_loop *loop;
 	struct stat buf;
 	char filename[16];
 	struct vt_stat vts;
@@ -142,49 +139,52 @@ struct tty *tty_create(int tty_fd, int tty_nr, yt_tty_vt_func_t vt_func, void *d
 	tty->data = data;
 	tty->vt_func = vt_func;
 
-	tty->event_fd = tty_fd;
-	if (tty->event_fd < 0)
-		tty->event_fd = STDIN_FILENO;
+	tty->fd = tty_fd;
+	if (tty->fd < 0)
+		tty->fd = STDIN_FILENO;
 
 	if (tty_nr > 0) {
 		snprintf(filename, sizeof filename, "/dev/tty%d", tty_nr);
 		printf("using %s\n", filename);
-		tty->event_fd = open(filename, O_RDWR | O_NOCTTY | O_CLOEXEC);
+		tty->fd = open(filename, O_RDWR | O_NOCTTY | O_CLOEXEC);
 		tty->vt = tty_nr;
-	} else if (fstat(tty->event_fd, &buf) == 0 &&
-			major(buf.st_rdev) == TTY_MAJOR && minor(buf.st_rdev) > 0) {
-		if (tty->event_fd == STDIN_FILENO)
-			tty->event_fd = fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, 0);
+	} else if (fstat(tty->fd, &buf) == 0 &&
+			major(buf.st_rdev) == TTY_MAJOR &&
+			minor(buf.st_rdev) > 0) {
+		if (tty->fd == STDIN_FILENO)
+			tty->fd = fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, 0);
 		tty->vt = minor(buf.st_rdev);
 	} else {
 		/* Fall back to try opening a new VT.  This typically
 		 * requires root. */
-		tty->event_fd = try_open_vt(tty);
+		tty->fd = try_open_vt(tty);
 	}
 
-	if (tty->event_fd <= 0) {
-		printf("failed to open tty: %s(%d)\n", strerror(errno), errno);
+	if (tty->fd <= 0) {
+		fprintf(stderr, "failed to open tty: %m\n");
 		free(tty);
 		return NULL;
 	}
 
-	if (ioctl(tty->event_fd, VT_GETSTATE, &vts) == 0)
+	if (ioctl(tty->fd, VT_GETSTATE, &vts) == 0)
 		tty->starting_vt = vts.v_active;
 	else
 		tty->starting_vt = tty->vt;
 
 	if (tty->starting_vt != tty->vt) {
-		if (ioctl(tty->event_fd, VT_ACTIVATE, tty->vt) < 0 ||
-				ioctl(tty->event_fd, VT_WAITACTIVE, tty->vt) < 0) {
-			printf("failed to swtich to new vt\n");
+		if (ioctl(tty->fd, VT_ACTIVATE, tty->vt) < 0 ||
+				ioctl(tty->fd, VT_WAITACTIVE, tty->vt) < 0) {
+			fprintf(stderr, "failed to swtich to new vt\n");
 			goto err;
 		}
 	}
 
-	if (tcgetattr(tty->event_fd, &tty->terminal_attributes) < 0) {
-		printf("could not get terminal attributes: %s(%d)\n", strerror(errno), errno);
+	if (tcgetattr(tty->fd, &tty->terminal_attributes) < 0) {
+		fprintf(stderr, "could not get terminal attributes: %m\n");
 		goto err;
 	}
+
+	loop = yt_seat_wl_disp_loop_get(seat);
 
 	/* Ignore control characters and disable echo */
 	raw_attributes = tty->terminal_attributes;
@@ -193,22 +193,28 @@ struct tty *tty_create(int tty_fd, int tty_nr, yt_tty_vt_func_t vt_func, void *d
 	/* Fix up line endings to be normal (cfmakeraw hoses them) */
 	raw_attributes.c_oflag |= OPOST | OCRNL;
 
-	if (tcsetattr(tty->event_fd, TCSANOW, &raw_attributes) < 0)
-		printf("could not put terminal into raw mode: %s(%d)\n", strerror(errno), errno);
+	if (tcsetattr(tty->fd, TCSANOW, &raw_attributes) < 0)
+		fprintf(stderr, "could not put terminal into raw mode: %m\n");
 
-	ioctl(tty->event_fd, KDGKBMODE, &tty->kb_mode);
-	ret = ioctl(tty->event_fd, KDSKBMODE, K_OFF);
+	ioctl(tty->fd, KDGKBMODE, &tty->kb_mode);
+	ret = ioctl(tty->fd, KDSKBMODE, K_OFF);
 	if (ret) {
-		ret = ioctl(tty->event_fd, KDSKBMODE, K_RAW);
+		ret = ioctl(tty->fd, KDSKBMODE, K_RAW);
 		if (ret) {
-			printf("failed to set keyboard mode on tty: %s(%d)\n", strerror(errno), errno);
+			fprintf(stderr, "failed to set keyboard mode on tty: %m\n");
 			goto err_attr;
 		}
+
+		tty->input_source = wl_event_loop_add_fd(loop, tty->fd,
+				WL_EVENT_READABLE,
+				on_tty_input, tty);
+		if (!tty->input_source)
+			goto err_kdkbmode;
 	}
 
-	ret = ioctl(tty->event_fd, KDSETMODE, KD_GRAPHICS);
+	ret = ioctl(tty->fd, KDSETMODE, KD_GRAPHICS);
 	if (ret) {
-		printf("failed to set KD_GRAPHICS mode on tty: %s(%d)\n", strerror(errno), errno);
+		fprintf(stderr, "failed to set KD_GRAPHICS mode on tty: %m\n");
 		goto err_kdkbmode;
 	}
 
@@ -216,34 +222,34 @@ struct tty *tty_create(int tty_fd, int tty_nr, yt_tty_vt_func_t vt_func, void *d
 	mode.mode = VT_PROCESS;
 	mode.relsig = SIGUSR1;
 	mode.acqsig = SIGUSR1;
-	if (ioctl(tty->event_fd, VT_SETMODE, &mode) < 0) {
-		printf("failed to take control of vt handling\n");
+	if (ioctl(tty->fd, VT_SETMODE, &mode) < 0) {
+		fprintf(stderr, "failed to take control of vt handling\n");
 		goto err_kdmode;
 	}
 
-	sigset_t sig_mask;
-	sigemptyset(&sig_mask);
-	sigaddset(&sig_mask, SIGUSR1);
-	if ((tty->signal_fd = signalfd(-1, &sig_mask, SFD_CLOEXEC)) < 0)
+	tty->vt_source =
+		wl_event_loop_add_signal(loop, SIGUSR1, vt_handler, tty);
+	if (!tty->vt_source)
 		goto err_vtmode;
-	sigprocmask(SIG_BLOCK, &sig_mask, NULL);
+
+	tty->seat = seat;
 
 	return tty;
 
 err_vtmode:
-	ioctl(tty->event_fd, VT_SETMODE, &mode);
+	ioctl(tty->fd, VT_SETMODE, &mode);
 
 err_kdmode:
-	ioctl(tty->event_fd, KDSETMODE, KD_TEXT);
+	ioctl(tty->fd, KDSETMODE, KD_TEXT);
 
 err_kdkbmode:
-	ioctl(tty->event_fd, KDSKBMODE, tty->kb_mode);
+	ioctl(tty->fd, KDSKBMODE, tty->kb_mode);
 
 err_attr:
-	tcsetattr(tty->event_fd, TCSANOW, &tty->terminal_attributes);
+	tcsetattr(tty->fd, TCSANOW, &tty->terminal_attributes);
 
 err:
-	close(tty->event_fd);
+	close(tty->fd);
 	free(tty);
 	return NULL;
 }
@@ -252,32 +258,35 @@ void tty_reset(struct tty *tty)
 {
 	struct vt_mode mode = { 0, 0, 0, 0, 0 };
 
-	if (ioctl(tty->event_fd, KDSKBMODE, tty->kb_mode))
-		printf("failed to restore keyboard mode: %s(%d)\n", strerror(errno), errno);
+	if (ioctl(tty->fd, KDSKBMODE, tty->kb_mode))
+		fprintf(stderr, "failed to restore keyboard mode: %m\n");
 
-	if (ioctl(tty->event_fd, KDSETMODE, KD_TEXT))
-		printf("failed to set KD_TEXT mode on tty: %s(%d)\n", strerror(errno), errno);
+	if (ioctl(tty->fd, KDSETMODE, KD_TEXT))
+		fprintf(stderr, "failed to set KD_TEXT mode on tty: %m\n");
 
-	if (tcsetattr(tty->event_fd, TCSANOW, &tty->terminal_attributes) < 0)
-		printf("could not restore terminal to canonical mode\n");
+	if (tcsetattr(tty->fd, TCSANOW, &tty->terminal_attributes) < 0)
+		fprintf(stderr, "could not restore terminal to canonical mode\n");
 
 	mode.mode = VT_AUTO;
-	if (ioctl(tty->event_fd, VT_SETMODE, &mode) < 0)
-		printf("could not reset vt handling\n");
+	if (ioctl(tty->fd, VT_SETMODE, &mode) < 0)
+		fprintf(stderr, "could not reset vt handling\n");
 
 	if (tty->has_vt && tty->vt != tty->starting_vt) {
-		ioctl(tty->event_fd, VT_ACTIVATE, tty->starting_vt);
-		ioctl(tty->event_fd, VT_WAITACTIVE, tty->starting_vt);
+		ioctl(tty->fd, VT_ACTIVATE, tty->starting_vt);
+		ioctl(tty->fd, VT_WAITACTIVE, tty->starting_vt);
 	}
 }
 
 void tty_destroy(struct tty *tty)
 {
-	close(tty->signal_fd);
+	if (tty->input_source)
+		wl_event_source_remove(tty->input_source);
+
+	wl_event_source_remove(tty->vt_source);
 
 	tty_reset(tty);
 
-	close(tty->event_fd);
+	close(tty->fd);
 
 	free(tty);
 }

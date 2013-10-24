@@ -11,12 +11,12 @@
 
 struct udev_context {
 	struct wl_list devices_list;
-
 	int udev_fd;
 	struct udev_monitor *udev_monitor;
 	struct udev *udev;
 	struct yt_hotplug_cbs hotplug_cb;
 	void *hotplug_data;
+	struct wl_event_source *soruce;
 };
 
 int evdev_enable_udev_monitor(struct udev_context *master);
