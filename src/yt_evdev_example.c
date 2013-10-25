@@ -73,37 +73,37 @@ struct yt_hotplug_cbs plug_api = {
 	.del_cb = &handle_del
 };
 
-void motion_cb(struct yt_device *device, uint32_t time,
+void motion_cb(struct yt_device *device, void *data, uint32_t time,
 			wl_fixed_t dx, wl_fixed_t dy)
 {
 	printf("motion: (%i, %i)\n", wl_fixed_to_int(dx), wl_fixed_to_int(dy));
 }
 
-void button_cb(struct yt_device *device, uint32_t time, int32_t button,
+void button_cb(struct yt_device *device, void *data, uint32_t time, int32_t button,
 			enum yt_button_state state)
 {
 	printf("button: %i %s\n", button, state==YT_BUTTON_STATE_PRESSED?"pressed":"released");
 }
 
-void axis_cb(struct yt_device *device, uint32_t time, enum yt_axis_type axis,
+void axis_cb(struct yt_device *device, void *data, uint32_t time, enum yt_axis_type axis,
 			wl_fixed_t value)
 {
 	printf("axis: (%i: %i)\n", axis, wl_fixed_to_int(value));
 }
 
-void modifier_cb(struct yt_device *device, uint32_t serial)
+void modifier_cb(struct yt_device *device, void *data, uint32_t serial)
 {
 	printf("%s, serial: 0x%x\n", __func__, serial);
 }
 
-void key_cb(struct yt_device *device, uint32_t time, uint32_t key,
+void key_cb(struct yt_device *device, void *data, uint32_t time, uint32_t key,
 			enum yt_key_state state,
 			enum yt_key_state_update update_state)
 {
 	printf("key: %i %s\n", key, state==YT_KEY_STATE_PRESSED?"pressed":"released");
 }
 
-void touch_cb(struct yt_device *device, uint32_t time, int touch_id,
+void touch_cb(struct yt_device *device, void *data, uint32_t time, int touch_id,
 		wl_fixed_t x, wl_fixed_t y, enum yt_touch_state state)
 {
 	printf("touch_id: %d, (%i, %i), touch_type: %d(%s)\n", touch_id,

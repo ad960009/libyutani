@@ -54,7 +54,6 @@ struct udev_context *uctx;
 struct yt_seat_internal {
 	struct yt_seat base;
 	struct tty *tty;
-//	int epoll_fd;
 	struct yt_seat_notify_interface notify;
 	void *notify_data;
 };
@@ -64,8 +63,10 @@ static inline struct yt_seat_internal *yt_seat_internal(struct yt_seat *seat)
 	return (struct yt_seat_internal *)seat;
 }
 
-struct yt_seat_notify_interface *yt_seat_notify_get(struct yt_seat *seat)
+struct yt_seat_notify_interface *yt_seat_notify_get(struct yt_seat *seat, void **data)
 {
+	if (data)
+		*data = yt_seat_internal(seat)->notify_data;
 	return &(yt_seat_internal(seat)->notify);
 }
 
@@ -125,28 +126,13 @@ YT_EXPORT int yt_device_del_from_seat(struct yt_device *device, struct yt_seat *
 
 YT_EXPORT int yt_device_handle(struct yt_device *device)
 {
-	struct evdev_device *dev = evdev_device(device);
-	struct input_event ev[32];
-	ssize_t len;
-
-	do {
-		len = read(device->fd, &ev, sizeof(ev));
-
-		if (len < 0 || len % sizeof(ev[0]) != 0) {
-			/* FIXME: destroy device? */
-			return 1;
-		}
-
-		evdev_process_events(dev, ev, len/sizeof(ev[0]));
-	} while (len > 0);
-
-	return 1;
+	return evdev_device_data(device->fd, 0, device);
 }
 
 YT_EXPORT int yt_device_timer_handle(struct yt_device *device)
 {
 	struct evdev_device *dev = evdev_device(device);
-	return touchpad_timeout_handler(dev->dispatch);
+	return touchpad_timeout_handler((struct evdev_device *)dev->dispatch);
 }
 
 YT_EXPORT struct yt_seat *yt_seat_create(const char *name,
@@ -261,5 +247,6 @@ YT_EXPORT int yt_tty_activate_vt(struct yt_seat *seat, int vt)
 {
 	struct yt_seat_internal *seat_i = yt_seat_internal(seat);
 	if (seat_i->tty)
-		tty_activate_vt(seat_i->tty, vt);
+		return tty_activate_vt(seat_i->tty, vt);
+	return 0;
 }

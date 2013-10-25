@@ -80,18 +80,18 @@ struct yt_device {
 };
 
 struct yt_seat_notify_interface {
-	void (*notify_motion)(struct yt_device *device, uint32_t time,
+	void (*notify_motion)(struct yt_device *device, void *notify_data, uint32_t time,
 			wl_fixed_t dx, wl_fixed_t dy);
-	void (*notify_motion_absolute)(struct yt_device *device, uint32_t time,
+	void (*notify_motion_absolute)(struct yt_device *device, void *notify_data, uint32_t time,
 			wl_fixed_t x, wl_fixed_t y);
-	void (*notify_button)(struct yt_device *device, uint32_t time, int32_t button,
+	void (*notify_button)(struct yt_device *device, void *notify_data, uint32_t time, int32_t button,
 			enum yt_button_state state);
-	void (*notify_axis)(struct yt_device *device, uint32_t time, enum yt_axis_type axis,
+	void (*notify_axis)(struct yt_device *device, void *notify_data, uint32_t time, enum yt_axis_type axis,
 			wl_fixed_t value);
-	void (*notify_modifiers)(struct yt_device *device, uint32_t serial);
-	void (*notify_key)(struct yt_device *device, uint32_t time, uint32_t key,
+	void (*notify_modifiers)(struct yt_device *device, void *notify_data, uint32_t serial);
+	void (*notify_key)(struct yt_device *device, void *notify_data, uint32_t time, uint32_t key,
 			enum yt_key_state state, enum yt_key_state_update update_state);
-	void (*notify_touch)(struct yt_device *device, uint32_t time, int touch_id,
+	void (*notify_touch)(struct yt_device *device, void *notify_data, uint32_t time, int touch_id,
 			wl_fixed_t x, wl_fixed_t y, enum yt_touch_state state);
 };
 

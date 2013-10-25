@@ -27,14 +27,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <mtdev.h>
-#include <errno.h>
 
 #include <wayland-server.h>
 #include "evdev.h"
 #include "yutani.h"
 #include "common.h"
 
-inline static void evdev_led_state_set(struct evdev_device *device)
+static inline void evdev_led_state_set(struct evdev_device *device)
 {
 	unsigned long led_bits[NBITS(KEY_MAX)];
 	int i;
@@ -88,7 +87,8 @@ void evdev_led_update(struct evdev_device *device, enum yt_led_state state)
 
 static inline void evdev_process_key(struct evdev_device *device, struct input_event *e, int time)
 {
-	struct yt_seat_notify_interface *notify = yt_seat_notify_get(device->seat);
+	void *data;
+	struct yt_seat_notify_interface *notify = yt_seat_notify_get(device->seat, &data);
 
 	/* ignore kernel key repeat */
 	if (e->value == 2)
@@ -104,14 +104,15 @@ static inline void evdev_process_key(struct evdev_device *device, struct input_e
 		case BTN_BACK:
 		case BTN_TASK:
 			if (notify && notify->notify_button)
-				notify->notify_button((struct yt_device *)device, time,
-						e->code,
+				notify->notify_button((struct yt_device *)device, data,
+						time, e->code,
 						e->value ? YT_BUTTON_STATE_PRESSED :
 						YT_BUTTON_STATE_RELEASED);
 			break;
 		case BTN_TOUCH:
 			if (notify->notify_touch && e->value == 0 && !device->is_mt)
-				notify->notify_touch((struct yt_device *)device, time, 0, 0, 0,
+				notify->notify_touch((struct yt_device *)device, data,
+						time, 0, 0, 0,
 						YT_TOUCH_STATE_UP);
 			break;
 		case KEY_CAPSLOCK:
@@ -129,7 +130,8 @@ static inline void evdev_process_key(struct evdev_device *device, struct input_e
 		default:
 notify_key:
 			if (notify->notify_key)
-				notify->notify_key((struct yt_device *)device, time, e->code,
+				notify->notify_key((struct yt_device *)device, data,
+						time, e->code,
 						e->value ? YT_KEY_STATE_PRESSED :
 						YT_KEY_STATE_RELEASED,
 						0);
@@ -178,7 +180,8 @@ static inline void evdev_process_absolute_motion(struct evdev_device *device,
 static inline void evdev_process_relative(struct evdev_device *device,
 		struct input_event *e, uint32_t time)
 {
-	struct yt_seat_notify_interface *notify = yt_seat_notify_get(device->seat);
+	void *data;
+	struct yt_seat_notify_interface *notify = yt_seat_notify_get(device->seat, &data);
 
 	switch (e->code) {
 		case REL_X:
@@ -197,7 +200,7 @@ static inline void evdev_process_relative(struct evdev_device *device,
 					/* Scroll up */
 					if (notify && notify->notify_axis)
 						notify->notify_axis((struct yt_device *)device,
-								time,
+								data, time,
 								YT_AXIS_TYPE_VERTICAL_SCROLL,
 								-1 * e->value);
 					break;
@@ -213,7 +216,7 @@ static inline void evdev_process_relative(struct evdev_device *device,
 					/* Scroll right */
 					if (notify && notify->notify_axis)
 						notify->notify_axis((struct yt_device *)device,
-								time,
+								data, time,
 								YT_AXIS_TYPE_HORIZONTAL_SCROLL,
 								e->value);
 					break;
@@ -272,7 +275,8 @@ static void transform_absolute(struct evdev_device *device)
 
 static void evdev_flush_motion(struct evdev_device *device, uint32_t time)
 {
-	struct yt_seat_notify_interface *notify = yt_seat_notify_get(device->seat);
+	void *data;
+	struct yt_seat_notify_interface *notify = yt_seat_notify_get(device->seat, &data);
 
 	if (!(device->pending_events & EVDEV_SYN))
 		return;
@@ -280,14 +284,16 @@ static void evdev_flush_motion(struct evdev_device *device, uint32_t time)
 	device->pending_events &= ~EVDEV_SYN;
 	if (device->pending_events & EVDEV_RELATIVE_MOTION) {
 		if (notify && notify->notify_motion)
-			notify->notify_motion((struct yt_device *)device, time, device->rel.dx, device->rel.dy);
+			notify->notify_motion((struct yt_device *)device, data,
+					time, device->rel.dx, device->rel.dy);
 		device->pending_events &= ~EVDEV_RELATIVE_MOTION;
 		device->rel.dx = 0;
 		device->rel.dy = 0;
 	}
 	if (device->pending_events & EVDEV_ABSOLUTE_MT_DOWN) {
 		if (notify && notify->notify_touch)
-			notify->notify_touch((struct yt_device *)device, time, device->mt.slot,
+			notify->notify_touch((struct yt_device *)device, data,
+					time, device->mt.slot,
 					wl_fixed_from_int(device->mt.x[device->mt.slot]),
 					wl_fixed_from_int(device->mt.y[device->mt.slot]),
 					YT_TOUCH_STATE_DOWN);
@@ -296,7 +302,8 @@ static void evdev_flush_motion(struct evdev_device *device, uint32_t time)
 	}
 	if (device->pending_events & EVDEV_ABSOLUTE_MT_MOTION) {
 		if (notify && notify->notify_touch)
-			notify->notify_touch((struct yt_device *)device, time, device->mt.slot,
+			notify->notify_touch((struct yt_device *)device, data,
+					time, device->mt.slot,
 					wl_fixed_from_int(device->mt.x[device->mt.slot]),
 					wl_fixed_from_int(device->mt.y[device->mt.slot]),
 					YT_TOUCH_STATE_MOVE);
@@ -305,7 +312,8 @@ static void evdev_flush_motion(struct evdev_device *device, uint32_t time)
 	}
 	if (device->pending_events & EVDEV_ABSOLUTE_MT_UP) {
 		if (notify && notify->notify_touch)
-			notify->notify_touch((struct yt_device *)device, time, device->mt.slot,
+			notify->notify_touch((struct yt_device *)device, data,
+					time, device->mt.slot,
 					wl_fixed_from_int(device->mt.x[device->mt.slot]),
 					wl_fixed_from_int(device->mt.y[device->mt.slot]),
 					WL_TOUCH_UP);
@@ -315,8 +323,8 @@ static void evdev_flush_motion(struct evdev_device *device, uint32_t time)
 	if (device->pending_events & EVDEV_ABSOLUTE_MOTION) {
 		transform_absolute(device);
 		if (notify && notify->notify_motion_absolute)
-			notify->notify_motion_absolute((struct yt_device *)device, time,
-					wl_fixed_from_int(device->abs.x),
+			notify->notify_motion_absolute((struct yt_device *)device, data,
+					time, wl_fixed_from_int(device->abs.x),
 					wl_fixed_from_int(device->abs.y));
 		device->pending_events &= ~EVDEV_ABSOLUTE_MOTION;
 	}
@@ -356,7 +364,7 @@ static struct evdev_dispatch fallback_dispatch = {
 	.interface = &fallback_interface
 };
 
-void evdev_process_events(struct evdev_device *device,
+static void evdev_process_events(struct evdev_device *device,
 		struct input_event *ev, int count)
 {
 	struct evdev_dispatch *dispatch = device->dispatch;
@@ -547,7 +555,7 @@ struct evdev_device *evdev_device_create(const char *path)
 
 	device->base.fd = open(path, O_RDWR | O_CLOEXEC);
 	if (device->base.fd < 0) {
-		printf("Failed to open %s: %s\n", path, strerror(errno));
+		fprintf(stderr, "Failed to open %s: %m\n", path);
 		goto err1;
 	}
 
@@ -568,7 +576,7 @@ struct evdev_device *evdev_device_create(const char *path)
 	if (device->is_mt) {
 		device->mtdev = mtdev_new_open(device->base.fd);
 		if (!device->mtdev)
-			printf("mtdev failed to open for %s\n", path);
+			fprintf(stderr, "mtdev failed to open for %s\n", path);
 	}
 
 	close(device->base.fd);
@@ -593,17 +601,16 @@ void evdev_device_destroy(struct evdev_device *device)
 	if (dispatch)
 		dispatch->interface->destroy(dispatch);
 
-	if (!wl_list_empty(&device->base.seat_link))
+	if (!wl_list_empty(&device->base.seat_link) && device->base.seat_link.prev)
 		wl_list_remove(&device->base.seat_link);
-	if (!(device->base.fd < 0))
-		close(device->base.fd);
 
-	if (!wl_list_empty(&device->base.all_devices_link))
+	if (!wl_list_empty(&device->base.all_devices_link) && device->base.all_devices_link.prev)
 		wl_list_remove(&device->base.all_devices_link);
 
 	if (device->mtdev)
 		mtdev_close_delete(device->mtdev);
-	close(device->base.fd);
+	if (!(device->base.fd < 0))
+		close(device->base.fd);
 	free(device->base.devname);
 	free(device->base.devnode);
 	free(device);

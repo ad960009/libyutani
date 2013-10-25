@@ -33,7 +33,7 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <errno.h>
+
 #include <sys/signalfd.h>
 #include "tty.h"
 /* Introduced in 2.6.38 */

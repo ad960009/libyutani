@@ -271,10 +271,12 @@ static void touchpad_get_delta(struct touchpad_dispatch *touchpad, double *dx, d
 
 static void notify_button_pressed(struct touchpad_dispatch *touchpad, uint32_t time)
 {
-	struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat);
+	void *data;
+	struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat, &data);
 	
 	if (notify && notify->notify_button) {
-		notify->notify_button((struct yt_device *)touchpad->device, time,
+		notify->notify_button((struct yt_device *)touchpad->device,
+				data, time,
 				DEFAULT_TOUCHPAD_SINGLE_TAP_BUTTON,
 				WL_POINTER_BUTTON_STATE_PRESSED);
 	}
@@ -285,10 +287,12 @@ static void notify_button_pressed(struct touchpad_dispatch *touchpad, uint32_t t
 
 static void notify_button_released(struct touchpad_dispatch *touchpad, uint32_t time)
 {
-	struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat);
+	void *data;
+	struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat, &data);
 	
 	if (notify && notify->notify_button) {
-		notify->notify_button((struct yt_device *)touchpad->device, time,
+		notify->notify_button((struct yt_device *)touchpad->device,
+				data, time,
 				DEFAULT_TOUCHPAD_SINGLE_TAP_BUTTON,
 				WL_POINTER_BUTTON_STATE_PRESSED);
 	}
@@ -511,17 +515,18 @@ static void touchpad_update_state(struct touchpad_dispatch *touchpad, uint32_t t
 			touchpad->device->pending_events |=
 				EVDEV_RELATIVE_MOTION | EVDEV_SYN;
 		} else if (touchpad->finger_state == TOUCHPAD_FINGERS_TWO) {
-			struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat);
+			void *data;
+			struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat, &data);
 			if (notify && notify->notify_axis) {
 				if (dx != 0.0) {
-					notify->notify_axis(touchpad->device,
-							time,
+					notify->notify_axis((struct yt_device *)touchpad->device,
+							data, time,
 							WL_POINTER_AXIS_HORIZONTAL_SCROLL,
 							wl_fixed_from_double(dx));
 				}
 				if (dy != 0.0) {
-					notify->notify_axis(touchpad->device,
-							time,
+					notify->notify_axis((struct yt_device *)touchpad->device,
+							data, time,
 							WL_POINTER_AXIS_VERTICAL_SCROLL,
 							wl_fixed_from_double(dy));
 				}
@@ -553,7 +558,7 @@ static void on_release(struct touchpad_dispatch *touchpad)
 }
 
 static inline void process_absolute(struct touchpad_dispatch *touchpad,
-		struct evdev_device *device, struct input_event *e)
+		struct evdev_device *device __UNUSED__, struct input_event *e)
 {
 	switch (e->code) {
 		case ABS_PRESSURE:
@@ -583,9 +588,10 @@ static inline void process_absolute(struct touchpad_dispatch *touchpad,
 }
 
 static inline void process_key(struct touchpad_dispatch *touchpad,
-		struct evdev_device *device, struct input_event *e, uint32_t time)
+		struct evdev_device *device __UNUSED__, struct input_event *e, uint32_t time)
 {
-	struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat);
+	void *data;
+	struct yt_seat_notify_interface *notify = yt_seat_notify_get(touchpad->device->seat, &data);
 	switch (e->code) {
 		case BTN_TOUCH:
 			if (!touchpad->has_pressure) {
@@ -606,9 +612,9 @@ static inline void process_key(struct touchpad_dispatch *touchpad,
 		case BTN_TASK:
 			if (notify && notify->notify_button) {
 				notify->notify_button((struct yt_device *)touchpad->device,
-					time, e->code,
-					e->value ? WL_POINTER_BUTTON_STATE_PRESSED :
-					WL_POINTER_BUTTON_STATE_RELEASED);
+						data, time, e->code,
+						e->value ? WL_POINTER_BUTTON_STATE_PRESSED :
+						WL_POINTER_BUTTON_STATE_RELEASED);
 			}
 			break;
 		case BTN_TOOL_PEN:
